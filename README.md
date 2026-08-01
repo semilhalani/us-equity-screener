@@ -8,7 +8,7 @@ This system pulls fundamental and market data for US equities from the Finnhub A
 
 ## Tech stack
 
-- Google Apps Script (JavaScript)
+- Google Apps Script, written in JavaScript
 - Finnhub API for fundamentals and market data
 - Finviz, scraped for supplementary data
 - Google Sheets as the data store and output layer
@@ -16,17 +16,17 @@ This system pulls fundamental and market data for US equities from the Finnhub A
 
 ## Key technical decisions
 
-**Why a custom chunked execution engine instead of a standard job scheduler**
+**Chunked execution instead of a standard job scheduler.** Apps Script kills any execution after 6 minutes, and a full run across the roughly 5,336 tickers currently in the universe takes far longer than that. The pipeline breaks work into chunks driven by a per minute trigger, tracks progress in Script Properties, and uses LockService so overlapping runs can't corrupt shared state. The full reasoning, plus a real cell limit crash this design had to work around, is in `project-description.md`.
 
-Google Apps Script kills any execution after 6 minutes with no way to extend it. The universe this pipeline scrapes covers all US common stock, ADR, and EQS tickers across a whitelisted set of exchanges, and the exact count depends on how many pass the index and cap filters at run time rather than being a fixed number in the code. Either way, a full data pull, benchmarking, and scoring run takes far longer than 6 minutes. Instead of relying only on Apps Script's built in time based triggers, the pipeline breaks work into discrete chunks, persists progress between runs using PropertiesService, and uses Apps Script's LockService so overlapping executions cannot corrupt shared state. ChunkEngine.gs also runs an hourly safety net trigger that recreates the per minute worker trigger if it ever gets deleted, so a job cannot get silently stuck.
+**Tier based peer benchmarking.** A mega cap and a nano cap trading at the same PE do not mean the same thing, so every stock is benchmarked against its own tier and industry or sector median instead of the whole market. How tiers get assigned and how the benchmarks are computed is in `tiers-gates-and-scoring.md`.
 
-**Why tier based peer benchmarking**
+**Disqualifier gates run separately from scoring.** Scoring asks how good a stock is, on a scale. Five hard gates ask whether something specifically disqualifies it, a plain yes or no, and a failed gate overrides everything else. One real example: QXO scores 65 on Fundamentals_Score and still ends up disqualified for excessive dilution. Gate by gate detail is in `tiers-gates-and-scoring.md`.
 
-Finviz's published industry and sector averages blend every market cap together, and a mega cap trading at the same PE as a nano cap does not mean the same thing for both companies. TierBenchmarks.gs computes its own median PE, ROE, margin, growth, and debt to equity per industry or sector, split by tier (Tier1_Core, Tier2_LargeMid, Tier3_Small, Tier4_Moonshot), using medians instead of means so a handful of extreme outliers cannot distort the benchmark. Tiers are assigned in Universe.gs, first by index membership (S&P 500, Nasdaq 100, Dow 30 land in Tier1), then by market cap bucket for everything else, with micro and nano cap stocks routed into their own Moonshot tier that gets scored on a different model entirely instead of being compared to large companies on the same metrics.
+**Rule based scoring rather than an ML model.** The code doesn't explain this one beyond it being the current stage of the project. Moving toward machine learning is a stated future direction, not something built yet, so I'm leaving the why not ML yet question open rather than guessing at a philosophy that isn't written down anywhere.
 
-**Why a rule based scoring engine rather than an ML model**
+## Known limitations
 
-The code and comments don't give a reason for this one, so I'm leaving it open rather than guessing. Worth having your own answer ready if it comes up.
+This is a rule based, deterministic system today, with no backtesting yet and a handful of honest metric substitutions where Finnhub's free tier falls short of what the ideal metric would be. The full list of what's not built yet and what's still manual is in `project-description.md`.
 
 ## How to explore this code
 
@@ -39,7 +39,17 @@ There is no single onOpen or menu driven entry point. Each stage of the pipeline
 - `ScoringEngine.gs`, the multi factor scoring logic. `runScoringEngineRefresh()` combines Raw_Fundamentals, Raw_TierBenchmarks, Raw_DisqualifierGates, Raw_EPSCategory, and Raw_InsiderSignals into Quality, Value, Growth, Moonshot, Volatility, and Reliability scores, then a final Verdict per ticker.
 - `ChunkEngine.gs`, the chunked execution and locking engine described above. `startChunkProcess()`, `runChunkWorker()`, and `autoResumeChunk()` are the core pieces.
 
-## Setup (if you want to run your own copy)
+## Documentation
+
+The `/docs` folder has three companion write ups with more depth than fits comfortably in this README:
+
+- `project-description.md`, the full technical writeup. Covers what the system does end to end, the decision framework behind it, engineering principles, automation and reliability, current limitations, and ideas for where it could go next.
+- `tiers-gates-and-scoring.md`, how tiers get assigned, how the five hard pass or fail gates work, and a column by column walkthrough of the scoring engine, all with real examples pulled from a live run.
+- `presentation-sheets.md`, how to actually use the four output sheets together to make a decision.
+
+## Setup
+
+If you want to run your own copy:
 
 ```bash
 npm install -g @google/clasp
@@ -47,9 +57,6 @@ clasp login
 clasp clone <your-script-id>
 ```
 
-You'll also need:
+You'll also need a Finnhub API key, available at https://finnhub.io/, and a Google Sheet bound to the script for output.
 
-- A [Finnhub API key](https://finnhub.io/)
-- A Google Sheet bound to the script for output
-
-This repo's `Constants.gs` has the real API keys replaced with a placeholder. Add your own Finnhub API key or keys to Script Properties (Apps Script editor, Project Settings, Script Properties), or paste them directly into the `FINNHUB_KEYS` placeholder in `Constants.gs`, before running. Don't commit real keys to a public repo.
+This repo's `Constants.gs` has the real API keys replaced with a placeholder. Add your own Finnhub API key or keys to Script Properties under Apps Script's Project Settings, or paste them directly into the `FINNHUB_KEYS` placeholder in `Constants.gs`, before running. Don't commit real keys to a public repo.
