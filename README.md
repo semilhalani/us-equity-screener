@@ -14,6 +14,10 @@ This system pulls fundamental and market data for US equities from the Finnhub A
 - Google Sheets as the data store and output layer
 - clasp, used to pull this project into version control
 
+## Background
+
+I started this in August 2025 as personal research, to make better-informed decisions about my own investments. I come from a technical background rather than a finance one, so I wanted a system that applies the same rules to every stock instead of relying on gut calls. The first version was a Google Sheets tracker that pulled Finnhub fundamentals for about 600 stocks in the S&P 500, Nasdaq 100 and Dow 30, alongside a separate tracker that flagged stocks beating earnings estimates in three or four of their last four quarters. In 2026 I merged the two, added the scoring engine and disqualifier gates, and grew the universe to 5,300+ tickers. This repo's history starts in August 2026, when the code was first pulled into version control with clasp.
+
 ## Earnings scraper phase
 
 Some Finviz earnings data (EPS, GAAP EPS and revenue history, and price reaction to earnings reports) is rendered in the browser by JavaScript, so the plain HTTP fetches used here cannot see it. That data is collected by a separate Python scraper using Selenium and BeautifulSoup, scheduled on GitHub Actions: [earnings-webscraping](https://github.com/semilhalani/earnings-webscraping). It reads tickers from this system's Raw_Universe sheet but writes to a separate test spreadsheet, so the live scoring workbook stays untouched until the scraper is proven and merged in.
